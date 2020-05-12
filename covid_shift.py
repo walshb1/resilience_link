@@ -7,8 +7,6 @@ import math
 import glob,os
 import scipy
 
-myCountry = 'PH'
-poverty_type = 'cons'
 
 # formatting & aesthetics
 font = {'family':'sans serif', 'size':10}
@@ -22,6 +20,13 @@ sns_pal = sns.color_palette('Set1', n_colors=8, desat=.4)
 greys_pal = sns.color_palette('Greys', n_colors=9)
 
 haz_dict = {'EQ':'earthquakes','HU':'wind events','SS':'storm surges','PF':'precipitation\nflooding'}
+
+keep_cols = ['pcwgt','c','dk0','dc_net_t0','dw',
+             'ispoor','ismiddleclass','isvulnerable','issecure',
+             't_pov_cons','t_pov_inc',
+             't_vul_cons','t_vul_inc',
+             't_sec_cons','t_sec_inc', 
+             't_mc_cons','t_mc_inc']
 
 def get_economy(myCountry):
     if myCountry == 'PH': return 'region'
@@ -49,31 +54,34 @@ def get_expectation_values(df,myCountry):
         
 
 def load_hh_df(myCountry,pds_scenario='no'):
-    
-    in_file = '../../output_country/{}/poverty_duration_{}.csv'.format(myCountry,pds_scenario)
     master_ix = [get_economy(myCountry),'hazard','rp','hhid','affected_cat','helped_cat']
 
-    df = pd.read_csv(in_file).set_index(master_ix).dropna(how='any')
-    df = get_quintile_info(myCountry,df,master_ix+['quintile'])
-    df = load_income_classification(myCountry,df,master_ix+['quintile'])
+    try: df = pd.read_csv('csv/poverty_duration_{}.csv'.format(pds_scenario)).set_index(master_ix+['quintile'])
+    except:
+        in_file = '~/Desktop/BANK/hh_resilience_model/output_country/{}/poverty_duration_{}.csv'.format(myCountry,pds_scenario)
+        df = pd.read_csv(in_file).set_index(master_ix)
+        df = df.reset_index('hazard')
+        df = df.loc[df.hazard=='HU'].reset_index().set_index(master_ix)
 
-    df = load_wellbeing_losses(myCountry,df,master_ix+['quintile'],pds_scenario)
+        df = get_quintile_info(myCountry,df,master_ix+['quintile'])
+        df = load_income_classification(myCountry,df,master_ix+['quintile'])
+        df = load_wellbeing_losses(myCountry,df,master_ix+['quintile'],pds_scenario)
+        df.to_csv('csv/poverty_duration_{}.csv'.format(pds_scenario))
     
-    return df.sort_index()
+    return df.sort_index(),len(np.array(df.index.get_level_values(1).unique()))
 
 def get_rho(myCountry):
-    in_file = '../../output_country/{}/macro_tax_no_.csv'.format(myCountry)
+    in_file = '~/Desktop/BANK/hh_resilience_model/output_country/{}/macro_tax_no_.csv'.format(myCountry)
     return float(pd.read_csv(in_file).dropna(how='any')['rho'].mean())
 
 def get_average_income(myCountry):
-    in_file = '../../output_country/{}/iah_tax_no_.csv'.format(myCountry)
+    in_file = '~/Desktop/BANK/hh_resilience_model/output_country/{}/iah_tax_no_.csv'.format(myCountry)
     iah = pd.read_csv(in_file).dropna(how='any')[['c','pcwgt']]
     c = iah[['c','pcwgt']].prod(axis=1).sum()/iah['pcwgt'].sum()
     return c
-avg_c = get_average_income(myCountry)
 
 def load_wellbeing_losses(myCountry,df,master_ix,pds_scenario):
-    in_file = '../../output_country/{}/iah_tax_{}_.csv'.format(myCountry,pds_scenario)
+    in_file = '~/Desktop/BANK/hh_resilience_model/output_country/{}/iah_tax_{}_.csv'.format(myCountry,pds_scenario)
     iah = pd.read_csv(in_file).set_index(master_ix).dropna(how='any')[['c','dw','pcwgt']]
     
     wprime = float(iah[['c','pcwgt']].prod(axis=1).sum()/iah['pcwgt'].sum())**(-1.5)
@@ -83,8 +91,9 @@ def load_wellbeing_losses(myCountry,df,master_ix,pds_scenario):
     return df
 
 def get_quintile_info(myCountry,df,master_ix):
-    quints = pd.read_csv('../../intermediate/{}/cat_info.csv'.format(myCountry),usecols=['hhid','quintile']).set_index('hhid')
+    quints = pd.read_csv('~/Desktop/BANK/hh_resilience_model/intermediate/{}/cat_info.csv'.format(myCountry),usecols=['hhid','quintile']).set_index('hhid')
     df = pd.merge(quints.reset_index(),df.reset_index(),on='hhid').set_index(master_ix)
+    print(df.head())
     return df
 
 def slice_on_pop(df,segment=None,poverty_type=None):
@@ -113,7 +122,7 @@ def slice_on_pop(df,segment=None,poverty_type=None):
 
 def get_population(myCountry,segment):
     _cols = [get_economy(myCountry),'quintile','pcwgt','ispoor','ismiddleclass','issecure','isvulnerable']
-    tot_pop = pd.read_csv('../../intermediate/{}/cat_info.csv'.format(myCountry),usecols=_cols).set_index([get_economy(myCountry),'quintile'])
+    tot_pop = pd.read_csv('~/Desktop/BANK/hh_resilience_model/intermediate/{}/cat_info.csv'.format(myCountry),usecols=_cols).set_index([get_economy(myCountry),'quintile'])
     
     if segment != 'poor': tot_pop,_ = slice_on_pop(tot_pop,segment)
     else: tot_pop = tot_pop.loc[tot_pop.ispoor==True]
@@ -123,14 +132,14 @@ def get_population(myCountry,segment):
     return tot_pop
     
 def load_income_classification(myCountry,df,master_ix):
-    cat_info = pd.read_csv('../../intermediate/{}/cat_info.csv'.format(myCountry))
+    cat_info = pd.read_csv('~/Desktop/BANK/hh_resilience_model/intermediate/{}/cat_info.csv'.format(myCountry))
     
     if 'ispoor' not in cat_info.columns or cat_info['ispoor'].astype('int').sum()==0: cat_info['ispoor'] = cat_info.c<=5.5*365
     if 'isvulnerable' not in cat_info.columns: cat_info['isvulnerable'] = (cat_info.c>5.5*365)&(cat_info.c<=10.*365)
     if 'issecure' not in cat_info.columns: cat_info['issecure'] = (cat_info.c>10*365)&(cat_info.c<15.*365)
     if 'ismiddleclass' not in cat_info.columns: cat_info['ismiddleclass'] = (cat_info.c>=15.*365)
 
-    cat_info.to_csv('../../intermediate/{}/cat_info.csv'.format(myCountry))
+    cat_info.to_csv('~/Desktop/BANK/hh_resilience_model/intermediate/{}/cat_info.csv'.format(myCountry))
     
     cat_info = cat_info[['hhid','ispoor','ismiddleclass','issecure','isvulnerable']]
     df = pd.merge(df.reset_index(),cat_info.reset_index(),on='hhid').set_index(master_ix)    
@@ -179,11 +188,45 @@ def set_directories(myCountry):
     if not os.path.isdir(path): os.mkdir(path)
 
 
+def generate_df_out(myCountry,master_df,poverty_type):
+    df_out = pd.DataFrame()
 
-
-#def main():
- 
-set_directories(myCountry)
-master_df = load_hh_df(myCountry)
-print(master_df.head())
-#master_df.head(500).to_csv('test.csv') 
+    # loop over population segments
+    for segment in ['poor','vulnerable','secure','middleclass']:
+        if myCountry == 'HR' and segment == 'poor': continue
+        
+        try: df_segment = get_population(myCountry,segment).sum(level=get_economy(myCountry)).squeeze().to_frame(name='total_pop')
+        except: 
+            df_segment = get_population(myCountry,segment).sum(level=get_economy(myCountry))
+            df_segment = df_segment.rename(columns={'pcwgt':'total_pop'})
+        df_segment['segment'] = segment
+        
+        # INPUT
+        # region, hazard, rp, hhid, affected_cat, helped_cat, quintile
+        # slice to select class (poor, vulnerable, secure, or middle class)
+        cols = ['pcwgt','c','dk0','dc_net_t0','dw','ispoor','issecure','isvulnerable','ismiddleclass']    
+        if segment != 'poor': df,_ = slice_on_pop(master_df,segment,poverty_type)
+        else: df = master_df.loc[master_df.ispoor==True]
+        df = df[[c for c in cols if c in df.columns]]
+        
+        df_segment['c'] = df[['pcwgt','c']].prod(axis=1).sum(level=get_economy(myCountry))/df['pcwgt'].sum(level=get_economy(myCountry))
+        
+        # loop over hazards
+        for _haz in np.array(master_df.index.get_level_values(1).unique()):
+            
+            df_haz = df.loc[df.eval("hazard=='{}'".format(_haz)),:].sort_index()
+        
+            df_100 = df_haz.loc[df_haz.eval("rp==100")]
+            df_segment['dk_100_'+_haz] = df_100[['dk0','pcwgt']].prod(axis=1).sum(level=get_economy(myCountry))
+            df_segment['dw_100_'+_haz] = df_100[['dw','pcwgt']].prod(axis=1).sum(level=get_economy(myCountry))
+            df_segment['affpop_100_'+_haz] = df_100.loc[df_100.eval("affected_cat=='a'"),'pcwgt'].sum(level=get_economy(myCountry))
+            
+            df_aal = df_haz[['dk0','pcwgt']].prod(axis=1).sum(level=[0,2]).to_frame(name='dk_avg_'+_haz)
+            df_aal['dw_avg_'+_haz] = df_haz[['dw','pcwgt']].prod(axis=1).sum(level=[0,2])
+            df_aal['affpop_avg_'+_haz] = df_haz.loc[df_haz.eval("affected_cat=='a'"),'pcwgt'].sum(level=[0,2])
+            df_segment[['dk_avg_'+_haz,'dw_avg_'+_haz,'affpop_avg_'+_haz]] = average_over_rp(df_aal,return_probs=False)
+                  
+        df_out = df_out.append(df_segment.fillna(0).reset_index().set_index([get_economy(myCountry),'segment']))
+        
+    df_out.to_csv('csv/df_out.csv')
+    return df_out
