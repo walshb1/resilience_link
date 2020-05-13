@@ -21,12 +21,15 @@ greys_pal = sns.color_palette('Greys', n_colors=9)
 
 haz_dict = {'EQ':'earthquakes','HU':'wind events','SS':'storm surges','PF':'precipitation\nflooding'}
 
-keep_cols = ['pcwgt','c','dk0','dc_net_t0','dw',
+keep_cols = ['hhid_lfs',
+             'pcwgt','c','dk0','dc_net_t0','dw',
              'ispoor','ismiddleclass','isvulnerable','issecure',
              't_pov_cons','t_pov_inc',
              't_vul_cons','t_vul_inc',
              't_sec_cons','t_sec_inc', 
-             't_mc_cons','t_mc_inc']
+             't_mc_cons','t_mc_inc','optimal_hh_reco_rate']
+
+ppp_factor = 0.047 #PhP to PPP
 
 def get_economy(myCountry):
     if myCountry == 'PH': return 'region'
